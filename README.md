@@ -25,6 +25,18 @@ Tired of manually editing the `gd` column in **phpMyAdmin** just to give a playe
 
 ---
 
+## 🎮 Live Interactive Demo
+
+See the management panel in action before you install. This is the exact website that our One-Click Engine will deploy for you.
+
+- **Demo Link:** [http://himeshhome.casa:8082](http://himeshhome.casa:8082)
+- **Test Username:** `testuser3`
+- **Test Password:** `password123`
+
+---
+
+---
+
 ## 🛠️ Quick Start (One-Line Magic)
 
 Run this command on your fresh VPS as **root**:
