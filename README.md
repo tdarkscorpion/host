@@ -63,7 +63,16 @@ The installer automatically configures:
 
 ---
 
-### 👨‍💻 Support
-If you encounter any issues, please contact the developer via the official support channels.
+## 👨‍💻 Created By: DarkScorpion
+
+If you need to make a payment, whitelist your domain, or need technical support, please contact me directly:
+
+- **Facebook:** [fb.me/darkscorpiont](http://fb.me/darkscorpiont)
+- **Developer:** DarkScorpion
+
+> [!IMPORTANT]
+> **Domain Whitelisting Required:** This website will only function on authorized domains. Contact DarkScorpion on Facebook to register your server's domain.
+
+---
 
 *Built with ❤️ for the Talisman Community by DarkScorpion.*
