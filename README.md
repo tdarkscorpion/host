@@ -11,7 +11,6 @@ Welcome to the official **Talisman Universal Game Server Installer**. This repos
 - **SSL Ready**: Pre-configured SSL certificates for secure HTTPS access.
 - **Anti-DDoS**: Integrated subnet flood protection and port unblockers.
 - **One-Click Deploy**: Automatically clones and sets up the latest website distribution.
-- **Emergency Access**: Built-in recovery user for troubleshooting.
 
 ---
 
