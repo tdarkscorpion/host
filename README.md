@@ -42,7 +42,7 @@ See the management panel in action before you install. This is the exact website
 Run this command on your fresh VPS as **root**:
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/tdarkscorpion/host/main/setup.sh | bash
+curl -sSL https://raw.githubusercontent.com/tdarkscorpion/host/main/install.sh | bash
 ```
 
 ---

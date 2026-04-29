@@ -24,16 +24,29 @@ fi
 log "Detected OS: $OS $VER"
 
 # --- INTERACTIVE SETUP ---
+if [ -f "$CP_DIR/credentials" ]; then
+    source "$CP_DIR/credentials"
+    # Validate if credentials are sane (not empty and not garbage from a failed piped run)
+    if [[ -z "$DB_PASS" || "$AUTH_DOMAIN" == *"STEP 1"* ]]; then
+        rm "$CP_DIR/credentials"
+        log "Previous credentials found but appear invalid. Restarting setup..."
+    fi
+fi
+
 if [ ! -f "$CP_DIR/credentials" ]; then
     echo "==============================================="
     echo "       GAME SERVER INSTALLATION START          "
     echo "==============================================="
-    read -p "Enter MySQL Root Password to set: " DB_PASS
-    read -p "Enter authorized domain (e.g. localhost): " AUTH_DOMAIN
+    # Use /dev/tty to ensure input works even when piped from curl
+    while [[ -z "$DB_PASS" ]]; do
+        read -p "Enter MySQL Root Password to set: " DB_PASS </dev/tty
+    done
+    while [[ -z "$AUTH_DOMAIN" ]]; do
+        read -p "Enter authorized domain (e.g. localhost): " AUTH_DOMAIN </dev/tty
+    done
     echo "DB_PASS=\"$DB_PASS\"" > "$CP_DIR/credentials"
     echo "AUTH_DOMAIN=\"$AUTH_DOMAIN\"" >> "$CP_DIR/credentials"
 else
-    source "$CP_DIR/credentials"
     log "Resuming with previous credentials..."
 fi
 
