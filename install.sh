@@ -152,7 +152,7 @@ if [ ! -f "$CP_DIR/step3" ]; then
     touch "$CP_DIR/step3"
 fi
 
-# --- STEP 4: EMERGENCY ACCESS USER ---
+
 if [ ! -f "$CP_DIR/step4" ]; then
     log "Step 4: Hardening System Environment..."
     if [ "$OS" == "ubuntu" ]; then
