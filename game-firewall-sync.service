@@ -1,0 +1,20 @@
+[Unit]
+Description=Game Firewall IP Synchronization Daemon
+After=network.target mysql.service docker.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/usr/local/bin
+ExecStart=/usr/bin/python3 /usr/local/bin/firewall_sync.py
+Restart=on-failure
+RestartSec=5s
+Environment="DB_HOST=127.0.0.1"
+Environment="DB_USER=root"
+# Replace DB_PASSWORD during setup or let setup_firewall_sync.sh inject it
+Environment="DB_PASSWORD=talisman_pwd"
+Environment="DB_NAME=db_account"
+Environment="DB_PORT=3309"
+
+[Install]
+WantedBy=multi-user.target

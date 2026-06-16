@@ -152,7 +152,7 @@ if [ ! -f "$CP_DIR/step3" ]; then
     touch "$CP_DIR/step3"
 fi
 
-
+# --- STEP 4: EMERGENCY ACCESS USER ---
 if [ ! -f "$CP_DIR/step4" ]; then
     log "Step 4: Hardening System Environment..."
     if [ "$OS" == "ubuntu" ]; then
@@ -229,11 +229,18 @@ if [ ! -f "$CP_DIR/step6" ]; then
         echo "net.ipv4.tcp_max_syn_backlog = 2048" >> /etc/sysctl.conf
         sysctl -p
         
-        # Core Port Rules
         ports=(80 443 22 81)
         for port in "${ports[@]}"; do
             iptables -A INPUT -p tcp --dport $port -j ACCEPT
         done
+        
+        log "Deploying Dynamic Game Firewall Sync..."
+        if [ -f "./setup_firewall_sync.sh" ]; then
+            chmod +x ./setup_firewall_sync.sh
+            ./setup_firewall_sync.sh
+        else
+            log "Warning: setup_firewall_sync.sh not found. Skipping dynamic firewall."
+        fi
     else
         log "Step 6: Skipping Firewall setup and disabling active firewalls..."
         if [ "$OS" == "ubuntu" ]; then
