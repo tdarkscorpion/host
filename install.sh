@@ -63,13 +63,13 @@ fi
 if [ ! -f "$CP_DIR/step1" ]; then
     log "Step 1: Installing dependencies..."
     if [ "$OS" == "ubuntu" ]; then
-        apt-get update && apt-get install -y software-properties-common curl git unzip wget iptables-persistent fail2ban p7zip-full
+        apt-get update && apt-get install -y software-properties-common curl git unzip wget iptables-persistent fail2ban p7zip-full default-mysql-client
         add-apt-repository -y ppa:ondrej/php
         apt-get update
     else
         yum install -y epel-release yum-utils
         yum groupinstall -y "Development Tools"
-        yum install -y curl git unzip wget iptables-services fail2ban p7zip
+        yum install -y curl git unzip wget iptables-services fail2ban p7zip mariadb
     fi
     touch "$CP_DIR/step1"
 fi
@@ -126,29 +126,65 @@ if [ ! -f "$CP_DIR/step2" ]; then
 fi
 
 # --- STEP 3: DOCKER & MYSQL INSTALLATION ---
-if [ ! -f "$CP_DIR/step3" ]; then
-    log "Step 3: Installing Docker & MySQL Container..."
+if [ ! -f "$CP_DIR/step3" ] || ! command -v mysql &> /dev/null; then
+    log "Step 3: Setting up MySQL Client & Server..."
     
-    # Install Docker via convenience script
-    if ! command -v docker &> /dev/null; then
-        curl -fsSL https://get.docker.com | sh
-        systemctl enable docker && systemctl start docker
+    # Ensure Host MySQL Client CLI is installed
+    if ! command -v mysql &> /dev/null; then
+        if [ "$OS" == "ubuntu" ]; then
+            apt-get install -y default-mysql-client || apt-get install -y mysql-client
+        else
+            yum install -y mariadb || yum install -y mysql
+        fi
     fi
     
-    # Install Docker Compose
-    if ! command -v docker-compose &> /dev/null; then
-        curl -L "https://github.com/docker/compose/releases/download/v2.24.1/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-        chmod +x /usr/local/bin/docker-compose
-    fi
+    MYSQL_SUCCESS=false
     
-    # Run MySQL in Docker
-    docker run -d \
-        --name mysql-server \
-        -p 3306:3306 \
-        -e MYSQL_ROOT_PASSWORD="$DB_PASS" \
-        --restart always \
-        mysql:5.7
+    # Try Docker MySQL 5.7 Container
+    if command -v docker &> /dev/null || curl -fsSL https://get.docker.com | sh; then
+        systemctl enable docker 2>/dev/null || true
+        systemctl start docker 2>/dev/null || true
         
+        # Cleanup pre-existing or broken container
+        docker rm -f mysql-server 2>/dev/null || true
+        
+        log "Launching Docker MySQL 5.7 Container..."
+        if docker run -d \
+            --name mysql-server \
+            -p 3306:3306 \
+            -e MYSQL_ROOT_PASSWORD="$DB_PASS" \
+            --restart always \
+            mysql:5.7 \
+            --default-authentication-plugin=mysql_native_password \
+            --sql-mode=""; then
+            
+            if ! command -v docker-compose &> /dev/null; then
+                curl -L "https://github.com/docker/compose/releases/download/v2.24.1/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose 2>/dev/null || true
+                chmod +x /usr/local/bin/docker-compose 2>/dev/null || true
+            fi
+            
+            MYSQL_SUCCESS=true
+            log "MySQL 5.7 container deployed and active on port 3306."
+        fi
+    fi
+    
+    # Fallback to Native MySQL/MariaDB Server if Docker deployment failed
+    if [ "$MYSQL_SUCCESS" = false ]; then
+        log "Docker deployment unavailable. Installing native MySQL/MariaDB server..."
+        if [ "$OS" == "ubuntu" ]; then
+            apt-get install -y mysql-server
+            systemctl enable mysql && systemctl start mysql
+            mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '$DB_PASS'; FLUSH PRIVILEGES;" 2>/dev/null || \
+            mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '$DB_PASS'; FLUSH PRIVILEGES;" 2>/dev/null || true
+            mysql -e "CREATE USER IF NOT EXISTS 'root'@'%' IDENTIFIED BY '$DB_PASS'; GRANT ALL PRIVILEGES ON *.* TO 'root'@'%' WITH GRANT OPTION; FLUSH PRIVILEGES;" 2>/dev/null || true
+        else
+            yum install -y mariadb-server
+            systemctl enable mariadb && systemctl start mariadb
+            mysqladmin -u root password "$DB_PASS" 2>/dev/null || mysql -u root -e "SET PASSWORD FOR 'root'@'localhost' = PASSWORD('$DB_PASS'); FLUSH PRIVILEGES;" 2>/dev/null || true
+        fi
+        log "Native MySQL server deployed and active on port 3306."
+    fi
+    
     touch "$CP_DIR/step3"
 fi
 
