@@ -149,7 +149,15 @@ fi
 # Install Docker if missing
 if ! command -v docker >/dev/null 2>&1; then
     log "Docker not found. Installing Docker..."
-    curl -fsSL https://get.docker.com | sh || error "Docker installation failed."
+    if ! (curl -fsSL https://get.docker.com | sh); then
+        log "Docker convenience script failed. Falling back to native package manager..."
+        if [ "$OS" == "ubuntu" ]; then
+            apt-get update
+            apt-get install -y docker.io docker-compose || error "Docker installation failed via apt."
+        else
+            yum install -y docker || error "Docker installation failed via yum."
+        fi
+    fi
 fi
 
 # Docker must start automatically on boot
