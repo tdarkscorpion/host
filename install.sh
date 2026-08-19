@@ -430,7 +430,8 @@ if [ ! -f "$CP_DIR/step7" ]; then
     # Clone the Encrypted Distribution repo
     git clone https://github.com/tdarkscorpion/New_Website.git /var/www/html
     
-    # Set permissions
+    # Set permissions and git safe directory
+    git config --global --add safe.directory /var/www/html
     chown -R www-data:www-data /var/www/html
     chmod -R 755 /var/www/html
     mkdir -p /var/www/html/uploads
