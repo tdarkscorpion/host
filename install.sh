@@ -126,24 +126,24 @@ if [ ! -f "$CP_DIR/step2" ]; then
 fi
 
 # --- STEP 3: DOCKER & MYSQL INSTALLATION ---
-# Uses Docker MySQL 5.7 with persistent storage and a legacy Unix socket bridge.
-# This is designed for old game binaries that insist on /var/run/mysqld/mysqld.sock.
+# Docker MariaDB 10.6 for legacy game binaries, with persistent storage and
+# a legacy Unix-socket bridge. All non-Docker installer steps remain unchanged.
 
-log "Step 3: Verifying Docker MySQL 5.7..."
+log "Step 3: Verifying Docker MariaDB 10.6..."
 
-MYSQL_CONTAINER="mysql-server"
-MYSQL_VOLUME="mysql_data"
-MYSQL_IMAGE="mysql:5.7"
+MYSQL_CONTAINER="game-mariadb106"
+MYSQL_VOLUME="game_mariadb106_data"
+MYSQL_IMAGE="mariadb:10.6.23"
 MYSQL_PORT="3306"
 MYSQL_SOCKET="/var/run/mysqld/mysqld.sock"
 MYSQL_PROXY_SERVICE="/etc/systemd/system/mysql-socket-proxy.service"
 
-# Ensure host MySQL client and socat are installed
+# Ensure host client, socat, and required utilities are installed
 if [ "$OS" == "ubuntu" ]; then
     apt-get update
-    apt-get install -y default-mysql-client socat ca-certificates curl
+    DEBIAN_FRONTEND=noninteractive apt-get install -y default-mysql-client mariadb-client socat ca-certificates curl openssl
 else
-    yum install -y mariadb socat ca-certificates curl
+    yum install -y mariadb socat ca-certificates curl openssl
 fi
 
 # Install Docker if missing
@@ -153,7 +153,7 @@ if ! command -v docker >/dev/null 2>&1; then
         log "Docker convenience script failed. Falling back to native package manager..."
         if [ "$OS" == "ubuntu" ]; then
             apt-get update
-            apt-get install -y docker.io docker-compose || error "Docker installation failed via apt."
+            apt-get install -y docker.io || error "Docker installation failed via apt."
         else
             yum install -y docker || error "Docker installation failed via yum."
         fi
@@ -163,103 +163,77 @@ fi
 # Docker must start automatically on boot
 systemctl enable docker >/dev/null 2>&1 || error "Could not enable Docker."
 systemctl start docker >/dev/null 2>&1 || error "Could not start Docker."
+docker info >/dev/null 2>&1 || error "Docker daemon is not responding."
 
-if ! docker info >/dev/null 2>&1; then
-    error "Docker daemon is not responding."
+# Do not disturb a native database service. If it is active, stop before changing containers.
+if systemctl is-active --quiet mariadb 2>/dev/null || systemctl is-active --quiet mysql 2>/dev/null; then
+    error "A native MySQL/MariaDB service is active. Stop/migrate it deliberately before installing Docker MariaDB; this installer will not disable it automatically."
 fi
 
-# Persistent database storage
-if ! docker volume inspect "$MYSQL_VOLUME" >/dev/null 2>&1; then
-    log "Creating persistent MySQL volume: $MYSQL_VOLUME"
-    docker volume create "$MYSQL_VOLUME" >/dev/null || error "Could not create MySQL volume."
-fi
-
-# If an existing mysql-server container exists, preserve it.
-# Never delete an existing DB container automatically.
+# Remove only the managed MariaDB container if present. Keep its volume intact.
+# The new MariaDB data uses a separate volume; the old mysql_data volume is untouched.
 if docker inspect "$MYSQL_CONTAINER" >/dev/null 2>&1; then
-    log "Existing MySQL container found. Preserving it."
-
-    # Always enforce auto-restart
-    docker update --restart=always "$MYSQL_CONTAINER" >/dev/null 2>&1 || true
-
-    # Start it if currently stopped
-    if [ "$(docker inspect -f '{{.State.Running}}' "$MYSQL_CONTAINER" 2>/dev/null)" != "true" ]; then
-        log "Existing MySQL container is stopped. Starting it..."
-        docker start "$MYSQL_CONTAINER" >/dev/null || error "Existing MySQL container could not be started."
-    fi
-else
-    log "Creating MySQL 5.7 container with persistent storage..."
-
-    docker run -d \
-        --name "$MYSQL_CONTAINER" \
-        --restart=always \
-        -p "${MYSQL_PORT}:3306" \
-        -v "${MYSQL_VOLUME}:/var/lib/mysql" \
-        -e MYSQL_ROOT_PASSWORD="$DB_PASS" \
-        "$MYSQL_IMAGE" \
-        --default-authentication-plugin=mysql_native_password \
-        --sql-mode="" \
-        --character-set-server=utf8 \
-        --collation-server=utf8_general_ci \
-        >/dev/null || error "Failed to create MySQL Docker container."
+    log "Removing existing managed container $MYSQL_CONTAINER (database volumes are not deleted)..."
+    docker rm -f "$MYSQL_CONTAINER" >/dev/null || error "Could not remove existing container $MYSQL_CONTAINER."
 fi
 
-# Wait until MySQL is genuinely ready
-log "Waiting for MySQL to become ready..."
-MYSQL_READY=false
+# Ensure persistent storage exists
+docker volume inspect "$MYSQL_VOLUME" >/dev/null 2>&1 || docker volume create "$MYSQL_VOLUME" >/dev/null || error "Could not create MariaDB volume."
 
+# If port 3306 is still occupied, do not kill the process or alter its service.
+if ss -lntp 2>/dev/null | grep -Eq '(:|\])3306[[:space:]]'; then
+    error "Port 3306 is already listening. The managed container was removed if it existed, but this installer will not stop another service automatically. Resolve the port conflict and rerun."
+fi
+
+log "Pulling $MYSQL_IMAGE..."
+docker pull "$MYSQL_IMAGE" || error "Could not pull $MYSQL_IMAGE."
+
+log "Creating MariaDB 10.6 container with persistent storage..."
+docker run -d \
+    --name "$MYSQL_CONTAINER" \
+    --restart=always \
+    -p "127.0.0.1:${MYSQL_PORT}:3306" \
+    -v "${MYSQL_VOLUME}:/var/lib/mysql" \
+    -e MARIADB_ROOT_PASSWORD="$DB_PASS" \
+    "$MYSQL_IMAGE" \
+    --sql-mode="" \
+    --character-set-server=utf8 \
+    --collation-server=utf8_general_ci \
+    >/dev/null || error "Failed to create MariaDB Docker container."
+
+# Wait until MariaDB is genuinely ready
+log "Waiting for MariaDB to become ready..."
+MYSQL_READY=false
 for i in $(seq 1 60); do
-    if docker exec "$MYSQL_CONTAINER" \
-        mysqladmin ping \
-        -uroot \
-        -p"$DB_PASS" \
-        --silent >/dev/null 2>&1; then
+    if docker exec "$MYSQL_CONTAINER" mariadb-admin ping -uroot "-p${DB_PASS}" --silent >/dev/null 2>&1; then
         MYSQL_READY=true
         break
     fi
-
-    # Abort early if the container crashes
     if [ "$(docker inspect -f '{{.State.Running}}' "$MYSQL_CONTAINER" 2>/dev/null)" != "true" ]; then
-        log "MySQL container stopped unexpectedly."
+        log "MariaDB container stopped unexpectedly."
         docker logs --tail 100 "$MYSQL_CONTAINER" 2>&1 | tee -a "$LOG_FILE"
-        error "MySQL container crashed during startup."
+        error "MariaDB container crashed during startup."
     fi
-
     sleep 2
 done
 
 if [ "$MYSQL_READY" != "true" ]; then
     docker logs --tail 100 "$MYSQL_CONTAINER" 2>&1 | tee -a "$LOG_FILE"
-    error "MySQL failed to become ready."
+    error "MariaDB failed to become ready."
 fi
 
-log "MySQL 5.7 is running on TCP 127.0.0.1:${MYSQL_PORT}."
+log "MariaDB 10.6 is running in Docker on 127.0.0.1:${MYSQL_PORT}."
 
-# Verify host TCP connectivity as well
-if ! mysqladmin \
-    -h 127.0.0.1 \
-    -P "$MYSQL_PORT" \
-    -uroot \
-    -p"$DB_PASS" \
-    ping \
-    --silent >/dev/null 2>&1; then
-    error "MySQL is running in Docker but host TCP connectivity on port ${MYSQL_PORT} failed."
+# Verify host TCP connectivity
+if ! mariadb-admin --protocol=tcp -h 127.0.0.1 -P "$MYSQL_PORT" -uroot "-p${DB_PASS}" ping --silent >/dev/null 2>&1; then
+    error "MariaDB is running in Docker but host TCP connectivity on port ${MYSQL_PORT} failed."
 fi
 
-# --------------------------------------------------------------------
-# LEGACY MYSQL UNIX SOCKET COMPATIBILITY
-#
-# Old game DB binaries may ignore TCP and attempt:
-#     /var/run/mysqld/mysqld.sock
-#
-# socat exposes that Unix socket and forwards it to Docker MySQL TCP.
-# --------------------------------------------------------------------
-
+# Legacy MySQL Unix socket compatibility for old game binaries
 mkdir -p /var/run/mysqld
-
 cat > "$MYSQL_PROXY_SERVICE" <<EOF
 [Unit]
-Description=Legacy MySQL Unix Socket to Docker TCP Proxy
+Description=Legacy MySQL Unix Socket to Docker MariaDB 10.6 Proxy
 Requires=docker.service
 After=docker.service network-online.target
 
@@ -267,7 +241,7 @@ After=docker.service network-online.target
 Type=simple
 ExecStartPre=/bin/mkdir -p /var/run/mysqld
 ExecStartPre=-/bin/rm -f ${MYSQL_SOCKET}
-ExecStart=/usr/bin/socat UNIX-LISTEN:${MYSQL_SOCKET},fork,mode=0666 TCP:127.0.0.1:${MYSQL_PORT}
+ExecStart=/usr/bin/socat UNIX-LISTEN:${MYSQL_SOCKET},fork,mode=0660 TCP:127.0.0.1:${MYSQL_PORT}
 Restart=always
 RestartSec=2
 
@@ -279,7 +253,7 @@ systemctl daemon-reload
 systemctl enable mysql-socket-proxy >/dev/null 2>&1 || error "Could not enable MySQL socket proxy."
 systemctl restart mysql-socket-proxy >/dev/null 2>&1 || error "Could not start MySQL socket proxy."
 
-# Wait briefly for socket creation
+# Wait for the legacy socket
 SOCKET_READY=false
 for i in $(seq 1 20); do
     if [ -S "$MYSQL_SOCKET" ]; then
@@ -288,30 +262,21 @@ for i in $(seq 1 20); do
     fi
     sleep 1
 done
-
 if [ "$SOCKET_READY" != "true" ]; then
     systemctl status mysql-socket-proxy --no-pager 2>&1 | tee -a "$LOG_FILE"
     error "Legacy MySQL socket proxy failed to create ${MYSQL_SOCKET}."
 fi
 
-# Verify legacy socket path works
-if ! mysqladmin \
-    --socket="$MYSQL_SOCKET" \
-    -uroot \
-    -p"$DB_PASS" \
-    ping \
-    --silent >/dev/null 2>&1; then
+# Verify socket connection
+if ! mariadb-admin --socket="$MYSQL_SOCKET" -uroot "-p${DB_PASS}" ping --silent >/dev/null 2>&1; then
     systemctl status mysql-socket-proxy --no-pager 2>&1 | tee -a "$LOG_FILE"
-    error "Legacy MySQL socket exists but cannot reach MySQL."
+    error "Legacy socket exists but cannot reach Docker MariaDB."
 fi
 
 log "Legacy MySQL socket compatibility is active at ${MYSQL_SOCKET}."
-
-# Save credentials securely
 echo "$DB_PASS" > /root/mysql_passwd
 chmod 600 /root/mysql_passwd
 
-# Only mark Step 3 complete after every verification passes
 touch "$CP_DIR/step3"
 
 # --- STEP 4: EMERGENCY ACCESS USER ---
